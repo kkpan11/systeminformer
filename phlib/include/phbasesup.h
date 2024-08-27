@@ -221,7 +221,7 @@ _Post_writable_byte_size_(Size)
 PVOID
 NTAPI
 PhReAllocateSafe(
-    _In_ PVOID Memory,
+    _In_opt_ PVOID Memory,
     _In_ SIZE_T Size
     );
 
@@ -2638,6 +2638,24 @@ PhAppendBytesBuilderEx(
     _Out_opt_ PSIZE_T Offset
     );
 
+PHLIBAPI
+VOID
+NTAPI
+PhAppendFormatBytesBuilder_V(
+    _Inout_ PPH_BYTES_BUILDER BytesBuilder,
+    _In_ _Printf_format_string_ PSTR Format,
+    _In_ va_list ArgPtr
+    );
+
+PHLIBAPI
+VOID
+NTAPI
+PhAppendFormatBytesBuilder(
+    _Inout_ PPH_BYTES_BUILDER BytesBuilder,
+    _In_ _Printf_format_string_ PSTR Format,
+    ...
+    );
+
 // Array
 
 /** An array structure. Storage is automatically allocated for new elements. */
@@ -3762,14 +3780,24 @@ PhBufferToHexStringBuffer(
     _Out_opt_ PSIZE_T ReturnLength
     );
 
-PHLIBAPI
 _Success_(return)
+PHLIBAPI
 BOOLEAN
 NTAPI
 PhStringToInteger64(
     _In_ PPH_STRINGREF String,
     _In_opt_ ULONG Base,
     _Out_opt_ PLONG64 Integer
+    );
+
+_Success_(return)
+PHLIBAPI
+BOOLEAN
+NTAPI
+PhStringToUInt64(
+    _In_ PPH_STRINGREF String,
+    _In_opt_ ULONG Base,
+    _Out_opt_ PULONG64 Integer
     );
 
 PHLIBAPI
@@ -3824,17 +3852,17 @@ NTAPI
 PhCalculateEntropy(
     _In_ PBYTE Buffer,
     _In_ ULONG64 BufferLength,
-    _Out_opt_ DOUBLE *Entropy,
-    _Out_opt_ DOUBLE *Variance
+    _Out_opt_ FLOAT *Entropy,
+    _Out_opt_ FLOAT *Variance
     );
 
 PHLIBAPI
 PPH_STRING
 NTAPI
 PhFormatEntropy(
-    _In_ DOUBLE Entropy,
+    _In_ FLOAT Entropy,
     _In_ USHORT EntropyPrecision,
-    _In_opt_ DOUBLE Variance,
+    _In_opt_ FLOAT Variance,
     _In_opt_ USHORT VariancePrecision
     );
 
@@ -3923,6 +3951,13 @@ ULONG
 NTAPI
 PhTlsAlloc(
     VOID
+    );
+
+PHLIBAPI
+NTSTATUS
+NTAPI
+PhTlsFree(
+    _In_ ULONG Index
     );
 
 PHLIBAPI
@@ -4093,6 +4128,7 @@ typedef enum _PH_FORMAT_TYPE
     UInt32FormatType,
     UInt64FormatType,
     UIntPtrFormatType,
+    SingleFormatType,
     DoubleFormatType,
     SizeFormatType,
     FormatTypeMask = 0x3f,
@@ -4106,7 +4142,10 @@ typedef enum _PH_FORMAT_TYPE
     /** If not specified, the default value is assumed */
     FormatUseParameter = 0x200,
 
+    //
     // Floating-point flags
+    //
+
     /** Use standard form instead of normal form */
     FormatStandardForm = 0x1000,
     /** Use hexadecimal form instead of normal form */
@@ -4116,7 +4155,10 @@ typedef enum _PH_FORMAT_TYPE
     /** Trailing zeros and possibly the decimal point are trimmed */
     FormatCropZeros = 0x8000,
 
+    //
     // Floating-point and integer flags
+    //
+
     /** Group digits (with floating-point, only works when in normal form) */
     FormatGroupDigits = 0x10000,
     /** Always insert a prefix, '+' for positive and '-' for negative */
@@ -4128,20 +4170,23 @@ typedef enum _PH_FORMAT_TYPE
      */
     FormatPadZeros = 0x40000,
 
+    //
     // General flags
-    /** Applies left alignment. Width must be specified. */
-    FormatLeftAlign = 0x80000000,
+    //
+
+    /** Make characters uppercase (only available for some types) */
+    FormatUpperCase = 0x20000000,
     /** Applies right alignment. Width must be specified. */
     FormatRightAlign = 0x40000000,
-    /** Make characters uppercase (only available for some types) */
-    FormatUpperCase = 0x20000000
+    /** Applies left alignment. Width must be specified. */
+    FormatLeftAlign = 0x80000000,
 } PH_FORMAT_TYPE;
 
 /** Describes an element to be formatted to a string. */
 typedef struct _PH_FORMAT
 {
     /** Specifies the type of the element and optional flags. */
-    PH_FORMAT_TYPE Type;
+    ULONG Type;
     /**
      * The precision of the element. The meaning of this field depends on the element type. For
      * \a Double and \a Size, this field specifies the number of decimal points to include.
@@ -4178,8 +4223,8 @@ typedef struct _PH_FORMAT
         ULONG UInt32;
         ULONG64 UInt64;
         ULONG_PTR UIntPtr;
+        FLOAT Single;
         DOUBLE Double;
-
         ULONG64 Size;
     } u;
 } PH_FORMAT, *PPH_FORMAT;
@@ -4270,7 +4315,7 @@ PhInitFormatX(
     _In_ ULONG UInt32
     )
 {
-    Format->Type = (PH_FORMAT_TYPE)(UInt32FormatType | FormatUseRadix);
+    Format->Type = UInt32FormatType | FormatUseRadix;
     Format->u.UInt32 = UInt32;
     Format->Radix = 16;
 }
@@ -4304,7 +4349,7 @@ PhInitFormatI64UGroupDigits(
     _In_ ULONG64 UInt64
     )
 {
-    Format->Type = (PH_FORMAT_TYPE)(UInt64FormatType | FormatGroupDigits);
+    Format->Type = UInt64FormatType | FormatGroupDigits;
     Format->u.UInt64 = UInt64;
 }
 
@@ -4316,7 +4361,7 @@ PhInitFormatI64UWithWidth(
     _In_ USHORT Width
     )
 {
-    Format->Type = (PH_FORMAT_TYPE)(UInt64FormatType | FormatPadZeros);
+    Format->Type = UInt64FormatType | FormatPadZeros;
     Format->u.UInt64 = UInt64;
     Format->Width = Width;
 }
@@ -4328,7 +4373,7 @@ PhInitFormatI64X(
     _In_ ULONG64 UInt64
     )
 {
-    Format->Type = (PH_FORMAT_TYPE)(UInt64FormatType | FormatUseRadix);
+    Format->Type = UInt64FormatType | FormatUseRadix;
     Format->u.UInt64 = UInt64;
     Format->Radix = 16;
 }
@@ -4351,7 +4396,7 @@ PhInitFormatIX(
     _In_ ULONG_PTR UIntPtr
     )
 {
-    Format->Type = (PH_FORMAT_TYPE)(UIntPtrFormatType | FormatUseRadix);
+    Format->Type = UIntPtrFormatType | FormatUseRadix;
     Format->u.UIntPtr = UIntPtr;
     Format->Radix = 16;
 }
@@ -4363,7 +4408,7 @@ PhInitFormatIXPadZeros(
     _In_ ULONG_PTR UIntPtr
     )
 {
-    Format->Type = (PH_FORMAT_TYPE)(UIntPtrFormatType | FormatUseRadix | FormatPadZeros);
+    Format->Type = UIntPtrFormatType | FormatUseRadix | FormatPadZeros;
     Format->u.UIntPtr = UIntPtr;
     Format->Radix = 16;
     Format->Width = sizeof(ULONG_PTR) * 2;
@@ -4390,7 +4435,7 @@ PhInitFormatE(
     _In_ USHORT Precision
     )
 {
-    Format->Type = (PH_FORMAT_TYPE)(DoubleFormatType | FormatStandardForm | FormatUsePrecision);
+    Format->Type = DoubleFormatType | FormatStandardForm | FormatUsePrecision;
     Format->u.Double = Double;
     Format->Precision = Precision;
 }
@@ -4403,7 +4448,7 @@ PhInitFormatA(
     _In_ USHORT Precision
     )
 {
-    Format->Type = (PH_FORMAT_TYPE)(DoubleFormatType | FormatHexadecimalForm | FormatUsePrecision);
+    Format->Type = DoubleFormatType | FormatHexadecimalForm | FormatUsePrecision;
     Format->u.Double = Double;
     Format->Precision = Precision;
 }
@@ -4427,7 +4472,7 @@ PhInitFormatSizeWithPrecision(
     _In_ USHORT Precision
     )
 {
-    Format->Type = (PH_FORMAT_TYPE)(SizeFormatType | FormatUsePrecision);
+    Format->Type = SizeFormatType | FormatUsePrecision;
     Format->u.Size = Size;
     Format->Precision = Precision;
 }
@@ -4456,11 +4501,24 @@ PHLIBAPI
 _Success_(return)
 BOOLEAN
 NTAPI
+PhFormatSingleToUtf8(
+    _In_ FLOAT Value,
+    _In_ ULONG Type,
+    _In_ ULONG Precision,
+    _Out_writes_bytes_(BufferLength) PSTR Buffer,
+    _In_opt_ SIZE_T BufferLength,
+    _Out_opt_ PSIZE_T ReturnLength
+    );
+
+PHLIBAPI
+_Success_(return)
+BOOLEAN
+NTAPI
 PhFormatDoubleToUtf8(
     _In_ DOUBLE Value,
     _In_ ULONG Type,
     _In_ ULONG Precision,
-    _Out_writes_bytes_opt_(BufferLength) PSTR Buffer,
+    _Out_writes_bytes_(BufferLength) PSTR Buffer,
     _In_opt_ SIZE_T BufferLength,
     _Out_opt_ PSIZE_T ReturnLength
     );

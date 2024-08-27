@@ -6,7 +6,7 @@
  * Authors:
  *
  *     wj32    2010-2016
- *     jxy-s   2021-2023
+ *     jxy-s   2021-2024
  *
  */
 
@@ -1320,7 +1320,7 @@ NTSTATUS KphQueryInformationObject(
             PVOID objectType;
             PUNICODE_STRING objectTypeName;
             PVOID guidEntry;
-            ETWREG_BASIC_INFORMATION basicInfo;
+            KPH_ETWREG_BASIC_INFORMATION basicInfo;
 
             dyn = KphReferenceDynData();
             if (!dyn ||
